@@ -36,7 +36,7 @@ Sterownik umożliwia ustawienie mocy (w promilach), odczyt prądu (z ADC) oraz w
 
 ## Domyślna konfiguracja
 
-* **F\_CPU**: 1 MHz (wewnętrzny RC lub zewnętrzny kwarc z odpowiednimi fuse bitami)
+* **F\_CPU**: 16 MHz (zewnętrzny kwarc z odpowiednimi fuse bitami)
 * **Modbus baudrate**: 4800 baud
 * **Adres** :1
 
