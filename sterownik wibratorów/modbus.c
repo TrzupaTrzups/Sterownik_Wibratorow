@@ -1,23 +1,26 @@
 // === modbus.c ===
-#define F_CPU 1000000UL
+#define F_CPU 16000000UL
 #include <avr/io.h>
 #include <avr/interrupt.h>
 #include <util/delay.h>
 #include "modbus.h"
 
-#define MODBUS_ADDRESS 0x01
 #define DIR_PORT PORTD
-#define DIR_PIN  PD2
-#define USART_BAUDRATE 4800
+#define DIR_PIN  PORTD2
+
+extern uint8_t current_modbus_address;
+extern volatile uint8_t power_setting;
+extern volatile uint16_t current_raw;
+extern volatile uint8_t triac_enable;
+extern uint8_t current_baudrate_code;
+
+#define MODBUS_ADDRESS current_modbus_address
+#define USART_BAUDRATE (current_baudrate_code == 2 ? 9600 : (current_baudrate_code == 3 ? 19200 : 4800))
 #define BAUD_PRESCALE (((F_CPU / (USART_BAUDRATE * 16UL))) - 1)
 
 volatile uint8_t rx_buffer[8];
 volatile uint8_t rx_index = 0;
 volatile uint8_t frame_ready = 0;
-
-extern volatile uint8_t power_setting;
-extern volatile uint16_t current_raw;
-extern volatile uint8_t triac_enable;
 
 uint16_t modbus_crc(uint8_t *buf, uint8_t len) {
 	uint16_t crc = 0xFFFF;
@@ -96,8 +99,10 @@ void modbus_poll(void) {
 			value = power_setting;
 			} else if (reg_addr == 0x0002) {
 			value = current_raw;
-			} else if (reg_addr == 0x0003) {
-			value = triac_enable;
+			} else if (reg_addr == 0x0004) {
+			value = current_modbus_address;
+			} else if (reg_addr == 0x0005) {
+			value = current_baudrate_code;
 		}
 
 		response[3] = value >> 8;
@@ -115,7 +120,7 @@ void modbus_poll(void) {
 		while (!(UCSR0A & (1 << TXC0))) ; UCSR0A |= (1 << TXC0);
 		DIR_PORT &= ~(1 << DIR_PIN);
 	}
-	else if (func == 0x05) { // Write Single Coil
+	else if (func == 0x05) {
 		if (reg_addr == 0x0001) {
 			if (reg_value == 0xFF00) {
 				triac_enable = 1;
@@ -136,12 +141,12 @@ void modbus_poll(void) {
 			DIR_PORT &= ~(1 << DIR_PIN);
 		}
 	}
-	else if (func == 0x01) { // Read Coils
+	else if (func == 0x01) {
 		if (reg_addr == 0x0001) {
 			uint8_t response[6];
-			response[0] = rx_buffer[0]; // slave ID
-			response[1] = 0x01;         // function code
-			response[2] = 0x01;         // byte count
+			response[0] = rx_buffer[0];
+			response[1] = 0x01;
+			response[2] = 0x01;
 			response[3] = triac_enable ? 0x01 : 0x00;
 			uint16_t r_crc = modbus_crc(response, 4);
 			response[4] = r_crc & 0xFF;
