@@ -1,72 +1,95 @@
-# Sterownik Wibratora ATmega328P z Modbus RTU
+# Sterownik Wibratora ATmega328P z Modbus RTU i Triakiem
 
-Firmware dla ATmega328P do sterowania wibratorem (triakiem) za pomocą regulacji fazowej oraz komunikacji Modbus RTU.
-Sterownik umożliwia ustawienie mocy (w promilach), odczyt prądu (z ADC) oraz włączanie/wyłączanie triaka poprzez Modbus.
+Firmware dla ATmega328P do sterowania mocą wibratora poprzez Modbus RTU, z obsługą triaka (sterowanie fazowe) oraz funkcją zapamiętywania ustawień.
 
 ## Funkcje
 
-- **Modbus RTU (4800 baud, 8N1, bez parzystości)**
-  - Obsługiwane funkcje:
-    - `0x01` (Read Coils) — odczyt stanu włączenia triaka
-    - `0x03` (Read Holding Registers) — odczyt mocy i prądu
-    - `0x04` (Read Input Registers) — odczyt prądu
-    - `0x05` (Write Single Coil) — włączanie/wyłączanie triaka
-    - `0x06` (Write Single Register) — ustawianie mocy (0-1000 promili) oraz parametrów Modbus
+* Sterowanie mocą (0-1000 promili) poprzez Modbus (rejestr 0x0001)
+* Włączanie i wyłączanie triaka (Coil 0x0001)
+* Odczyt wartości prądu (ADC) przez Modbus (rejestr 0x0002)
+* Zmiana adresu Modbus oraz prędkości transmisji (rejestry 0x0004 i 0x0005)
+* Przywracanie ustawień fabrycznych za pomocą zworki (PD6 do GND podczas resetu)
+* Zabezpieczenie przed podwójnym załączeniem triaka (debounce + pulse scheduled)
 
-- **Sterowanie triakiem (regulacja fazowa)**
-  - Ustawianie mocy w promilach (0-1000)
-  - Detekcja przejścia przez zero dla dokładnego załączania
-  - Timer1 do opóźniania impulsu
+---
 
-- **Pomiar prądu**
-  - ADC0 (PC0) odczytuje analogową wartość z przekładnika prądowego
+## Funkcje Modbus
 
-- **Zdalna konfiguracja Modbus**
-  - Możliwość zmiany adresu i prędkości (baudrate) Modbus przez rejestry
-  - Przywracanie ustawień domyślnych poprzez zworkę na PD6 (zwarta do masy podczas resetu)
+| Funkcja                | Kod  | Adres  | Opis                                              |
+| ---------------------- | ---- | ------ | ------------------------------------------------- |
+| Read Coils             | 0x01 | 0x0001 | Odczyt stanu triaka (0 = wyłączony, 1 = włączony) |
+| Read Holding Registers | 0x03 | 0x0001 | Odczyt mocy (0–1000 promili)                      |
+|                        |      | 0x0002 | Odczyt wartości prądu (ADC)                       |
+|                        |      | 0x0004 | Odczyt aktualnego adresu Modbus                   |
+|                        |      | 0x0005 | Odczyt aktualnej prędkości Modbus                 |
+| Read Input Registers   | 0x04 | 0x0002 | Odczyt wartości prądu (ADC)                       |
+| Write Single Coil      | 0x05 | 0x0001 | Włączenie/wyłączenie triaka (0xFF00 lub 0x0000)   |
+| Write Single Register  | 0x06 | 0x0001 | Ustawienie mocy (0–1000 promili)                  |
+|                        |      | 0x0004 | Ustawienie adresu Modbus                          |
+|                        |      | 0x0005 | Ustawienie prędkości Modbus                       |
 
-## Mapa rejestrów Modbus
+---
 
-| Adres | Typ | Opis | Dostęp |
-|-------|-----|------|--------|
-| 0x0001 | Coil | Włączenie triaka (0/1) | R/W |
-| 0x0001 | Rejestr Holding | Ustawienie mocy (0-1000 promili) | R/W |
-| 0x0002 | Rejestr Holding/Input | Prąd (surowa wartość ADC 0-1023) | R |
-| 0x0003 | Rejestr Holding | Włączenie triaka (alternatywnie jako rejestr) | R/W |
-| 0x0004 | Rejestr Holding | Adres Modbus (1-247) | R/W |
-| 0x0005 | Rejestr Holding | Prędkość Modbus (1 = 4800, 2 = 9600, 3 = 19200) | R/W |
+## Prędkości Modbus
 
-## Domyślna konfiguracja
+| Kod | Prędkość  |
+| --- | --------- |
+| 1   | 4800 bps  |
+| 2   | 9600 bps  |
+| 3   | 19200 bps |
 
-- **F_CPU**: 16 MHz (zewnętrzny kwarc lub wewnętrzny zegar, jak w Arduino UNO)
-- **Modbus baudrate (domyślny)**: 4800 baud (możliwa zmiana na 9600 lub 19200 poprzez rejestr 0x0005)
+Zmiana prędkości wymaga restartu mikrokontrolera.
 
-## Ustawienia fuse (zalecane dla zewnętrznego kwarca 16MHz jak Arduino UNO)
+---
 
-| Fuse | Wartość | Opis |
-|------|--------|------|
-| LOW  | 0xFF | Zewnętrzny kwarc (8+ MHz) |
-| HIGH | 0xDE | SPI włączone, bootloader włączony (lub 0xD9 jeśli bez bootloadera) |
-| EXT  | 0xFD | BOD na 2.7V |
+## Obsługa TRIAC (T835-600B-TR)
 
-## Użycie
+* Triak załączany tylko w dodatniej półfali
+* Detekcja przejścia przez zero z zabezpieczeniem przed zakłóceniami (debounce)
+* Każdy impuls triaka trwa 100us
+* Używany tryb sterowania fazowego (opóźnienie po przejściu przez zero zależne od ustawionej mocy)
 
-Podłącz przez dowolny program Modbus (QModMaster, SCADA, Python pymodbus itp.)
+---
 
-- Aby włączyć/wyłączyć triak:
-  - Funkcja `0x05` (Write Single Coil) adres `0x0001`: `0xFF00` (ON), `0x0000` (OFF)
-- Aby ustawić moc:
-  - Funkcja `0x06` (Write Single Register) adres `0x0001`: `0 - 1000`
-- Aby odczytać prąd:
-  - Funkcja `0x04` lub `0x03` adres `0x0002`
-- Aby zmienić adres Modbus:
-  - Funkcja `0x06` adres `0x0004`: wartość 1-247
-- Aby zmienić prędkość Modbus:
-  - Funkcja `0x06` adres `0x0005`: 1=4800, 2=9600, 3=19200 (wymaga restartu)
+## Wejścia/Wyjścia
 
-## Kompilacja
+| Pin    | Funkcja                                               |
+| ------ | ----------------------------------------------------- |
+| PORTB0 | Sterowanie triakiem (impuls)                          |
+| PORTB1 | Debug LED (sygnalizacja impulsu triaka)               |
+| PORTD2 | RS485 DE (kierunek Modbus)                            |
+| PORTC2 | Zero crossing (detekcja przejścia przez zero)         |
+| PORTD6 | Przywracanie ustawień domyślnych (GND podczas resetu) |
 
-Kompilacja w Microchip Studio, avr-gcc lub PlatformIO. Upewnij się, że `F_CPU` i `USART_BAUDRATE` są poprawnie zdefiniowane w plikach `main.c` i `modbus.c`.
+---
+
+## Przywracanie ustawień fabrycznych
+
+Aby przywrócić ustawienia domyślne:
+
+1. Zewrzyj PD6 do masy.
+2. Włącz zasilanie.
+3. Po około 10 ms ustawienia zostaną zresetowane do domyślnych (adres = 1, prędkość = 4800 bps).
+
+---
+
+## Domyślne ustawienia
+
+| Parametr        | Wartość domyślna      |
+| --------------- | --------------------- |
+| Adres Modbus    | 1                     |
+| Prędkość Modbus | 4800 bps              |
+| Triac           | Wyłączony (coils = 0) |
+| Moc             | 0 promili             |
+
+---
+
+## Uwagi
+
+* Projekt zoptymalizowany dla sieci 50 Hz (dodatnia półfala co 20ms)
+* Zabezpieczenie przed podwójnym załączaniem triaka (pulse scheduled)
+* Debounce eliminujący zakłócenia przy detekcji przejścia przez zero
+* Działa w trybie Modbus RTU (8N1)
 
 ## Licencja
 
